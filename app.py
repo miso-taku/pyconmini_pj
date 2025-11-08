@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 import googlemaps
 import numpy as np
 import pandas as pd
-from python_tsp.exact import solve_tsp_dynamic_programming
+import mip
 from dataclasses import dataclass
 from typing import List, Tuple, Optional
 
@@ -175,21 +175,80 @@ def calculate_distance_matrix(station: Station, places: List[Place]) -> np.ndarr
 
 
 def optimize_route(station: Station, places: List[Place], distance_matrix: np.ndarray) -> Route:
-    """TSPとして最適ルートを計算"""
-    distance_matrix_int = distance_matrix.astype(int)
-    permutation, distance = solve_tsp_dynamic_programming(distance_matrix_int)
+    """
+    TSPとして最適ルートを計算（Python-MIPによる数理最適化）
 
-    station_idx = permutation.index(0)
-    visit_order = permutation[station_idx:] + permutation[:station_idx]
-    visit_order.append(0)
+    Args:
+        station: 駅情報
+        places: 店舗リスト
+        distance_matrix: 距離行列
 
-    optimized_places = [places[i-1] for i in visit_order[1:-1]]
+    Returns:
+        Route: 最適化されたルート情報
+    """
+    n = len(distance_matrix)  # 地点数（駅 + 店舗）
 
+    # モデル作成
+    model = mip.Model(sense=mip.MINIMIZE)
+    model.verbose = 0  # ログを抑制
+
+    # 決定変数: x[i][j] = 地点iから地点jへ移動するか（1 or 0）
+    x = [[model.add_var(var_type=mip.BINARY) for j in range(n)] for i in range(n)]
+
+    # 補助変数: u[i] = 地点iの訪問順序（部分巡回路除去用）
+    u = [model.add_var(var_type=mip.INTEGER, lb=1, ub=n-1) for i in range(n)]
+
+    # 目的関数: 総移動距離の最小化
+    model.objective = mip.xsum(distance_matrix[i][j] * x[i][j] for i in range(n) for j in range(n))
+
+    # 制約1: 各地点から出る辺は1本のみ
+    for i in range(n):
+        model += mip.xsum(x[i][j] for j in range(n) if i != j) == 1
+
+    # 制約2: 各地点に入る辺は1本のみ
+    for j in range(n):
+        model += mip.xsum(x[i][j] for i in range(n) if i != j) == 1
+
+    # 制約3: 部分巡回路の除去（MTZ制約）
+    for i in range(1, n):
+        for j in range(1, n):
+            if i != j:
+                model += u[i] - u[j] + n * x[i][j] <= n - 1
+
+    # 求解（最大30秒）
+    OPTIMIZATION_TIME_LIMIT = 30
+    status = model.optimize(max_seconds=OPTIMIZATION_TIME_LIMIT)
+
+    if status != mip.OptimizationStatus.OPTIMAL and status != mip.OptimizationStatus.FEASIBLE:
+        raise ValueError("最適化に失敗しました。時間制限内に解が見つかりませんでした。")
+
+    # 解から訪問順序を抽出
+    current = 0  # 駅からスタート
+    visit_order = [0]
+    visited = {0}
+
+    while len(visited) < n:
+        for j in range(n):
+            if j not in visited and x[current][j].x > 0.5:
+                visit_order.append(j)
+                visited.add(j)
+                current = j
+                break
+
+    # Routeオブジェクトを構築
+    optimized_places = [places[i-1] for i in visit_order[1:]]  # 駅を除く
+
+    # 各区間の距離を計算
     segment_distances = []
     for i in range(len(visit_order) - 1):
         segment_distances.append(distance_matrix[visit_order[i]][visit_order[i+1]])
 
+    # 最後: 最終店舗から駅への距離
+    segment_distances.append(distance_matrix[visit_order[-1]][0])
+
     total_distance = sum(segment_distances)
+
+    # 最後の店舗から駅への距離は除外（表示用）
     segment_distances_without_return = segment_distances[:-1]
 
     return Route(
@@ -230,7 +289,7 @@ st.sidebar.header("📋 検索条件")
 
 station_name = st.sidebar.text_input("駅名", value="金山駅", help="検索したい駅名を入力してください")
 keyword = st.sidebar.text_input("検索キーワード", value="手羽先", help="検索したい店舗のキーワードを入力してください")
-max_results = st.sidebar.slider("最大検索結果数", min_value=3, max_value=20, value=5, help="検索する店舗の最大数")
+max_results = st.sidebar.slider("最大検索結果数", min_value=3, max_value=10, value=5, help="検索する店舗の最大数")
 
 search_button = st.sidebar.button("🔍 検索・最適化実行", type="primary")
 
@@ -267,6 +326,26 @@ if search_button:
                 st.info("📏 距離行列を計算中...")
                 distance_matrix = calculate_distance_matrix(station, places)
                 st.success(f"✅ 距離行列計算完了 ({len(distance_matrix)}x{len(distance_matrix)})")
+
+                # 距離行列の表示
+                st.subheader("📏 地点間の距離行列（メートル）")
+
+                # 行ラベル（店舗名付き）、列ラベル（番号のみ）を作成
+                row_labels = [f"{station.name}（駅）"] + [f"{i}. {place.name}" for i, place in enumerate(places, 1)]
+                col_labels = ["駅"] + [f"{i}" for i in range(1, len(places) + 1)]
+
+                # DataFrameを作成（距離をメートル単位で表示）
+                df_distance_matrix = pd.DataFrame(
+                    distance_matrix,
+                    index=row_labels,
+                    columns=col_labels
+                )
+
+                # 整数に変換して見やすくする
+                df_distance_matrix = df_distance_matrix.astype(int)
+
+                st.dataframe(df_distance_matrix, use_container_width=True)
+                st.caption("💡 表の各セルは、行の地点から列の地点への徒歩距離（メートル）を示しています。列の番号は検索結果の番号に対応しています。")
 
                 # 検索結果の地図URL
                 map_url_search = generate_google_maps_url(station, places)
@@ -333,6 +412,6 @@ st.markdown("""
 
 ### 🔧 技術スタック
 - **Google Maps API**: 駅・店舗検索、距離計算
-- **python-tsp**: TSP（巡回セールスマン問題）の厳密解法
+- **Python-MIP**: TSP（巡回セールスマン問題）の数理最適化
 - **Streamlit**: Webアプリケーションフレームワーク
 """)

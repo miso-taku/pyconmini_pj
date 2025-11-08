@@ -2,5 +2,6 @@ python-dotenv==1.0.0
 googlemaps==4.10.0
 numpy>=1.26.0
 pandas==2.3.3
-python-tsp>=0.4.0
 streamlit>=1.40.0
+cffi>=2.0.0
+mip>=1.14.0

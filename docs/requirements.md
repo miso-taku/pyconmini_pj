@@ -12,9 +12,9 @@
 ## 2. システム概要
 
 ### 2.1 実行環境
-- **プラットフォーム**: Jupyter Notebook
-- **言語**: Python
-- **パッケージマネージャー**: uv
+- **プラットフォーム**: Streamlit Webアプリケーション（Jupyter Notebookは参考用）
+- **言語**: Python 3.12以上
+- **パッケージマネージャー**: uv（推奨）/ pip
 
 ### 2.2 主要機能
 1. 駅名と店舗キーワードの入力受付
@@ -84,8 +84,9 @@
 - **最適化目標**: 総移動距離の最小化
 
 #### 3.4.2 使用ライブラリ
-- **最適化エンジン**: Python-MIP
-- **ソルバー**: CBC（デフォルト）またはその他利用可能なソルバー
+- **最適化エンジン**: Python-MIP (mip >= 1.14.0)
+- **ソルバー**: CBC（Coin-or Branch and Cut、デフォルト）
+- **制約手法**: MTZ（Miller-Tucker-Zemlin）制約による部分巡回路除去
 
 #### 3.4.3 距離計算方法
 - **移動手段**: 徒歩を想定
@@ -141,19 +142,23 @@
 ### 5.1 使用技術スタック
 
 #### 5.1.1 プログラミング言語
-- Python 3.10以上
+- Python 3.12以上（mip 1.14.0の要件）
 
 #### 5.1.2 主要ライブラリ
+- **Webフレームワーク**:
+  - `streamlit`: Webアプリケーションフレームワーク
 - **地図・位置情報**:
   - `googlemaps`: Google Maps API クライアント
-  - `ipywidgets`: Jupyter上でのインタラクティブ表示（オプション）
 - **最適化**:
-  - `mip`: Python-MIP（数理最適化）
+  - `mip`: Python-MIP（混合整数計画法による数理最適化）
+  - バージョン: >=1.14.0（Python 3.12対応）
 - **データ処理**:
   - `pandas`: データフレーム操作
   - `numpy`: 数値計算
-- **可視化**:
-  - Google Maps JavaScript API（iframe表示）
+- **環境変数**:
+  - `python-dotenv`: APIキー管理
+- **依存ライブラリ**:
+  - `cffi`: mipのCバインディング（>=2.0.0）
 
 #### 5.1.3 外部API
 - **Google Places API**: 店舗検索
@@ -219,11 +224,12 @@
 ## 8. 成果物
 
 ### 8.1 納品物
-- Jupyter Notebook（`.ipynb`ファイル）
-- 必要な関数・クラスモジュール（`src/`ディレクトリ）
+- Streamlit Webアプリケーション（`app.py`）
+- Jupyter Notebook（`.ipynb`ファイル、参考用）
 - `requirements.txt`（依存パッケージリスト）
 - `.env.example`（APIキー設定テンプレート）
 - README.md（実行手順、使用方法）
+- CLAUDE.md（開発環境設定）
 
 ### 8.2 ドキュメント
 - 本要求定義書
